@@ -1,5 +1,6 @@
 # kindle epubs to highlighted pdf
 this app can convert kindle books into highlighed PDF/EPUBs
+# To get Started Download the app from the folder named Latest 1.1.1
 
 <img width="640" height="530" alt="image" src="https://github.com/user-attachments/assets/f2ce6d0e-0ca7-435e-a393-6fe9ddd1c030" />
 
