@@ -4,6 +4,7 @@ import queue
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -11,9 +12,17 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 import pymupdf
+from tkinterdnd2 import DND_FILES, TkinterDnD
 
 
 APP_TITLE = "Highlights to PDF / EPUB"
+NAVY = "#172033"
+BLUE = "#4658d9"
+BLUE_DARK = "#3344b5"
+YELLOW = "#ffd166"
+TEAL = "#21b7a8"
+BG = "#f2f5f8"
+CARD = "#ffffff"
 BOOK_EXTENSIONS = {".epub", ".azw3", ".mobi", ".azw", ".prc", ".kfx"}
 KINDLE_CONVERTIBLE_EXTENSIONS = BOOK_EXTENSIONS
 TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
@@ -30,6 +39,14 @@ def find_calibre() -> str | None:
         if candidate and Path(candidate).is_file():
             return str(candidate)
     return None
+
+
+def resource_path(name: str) -> Path:
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    direct = base / name
+    if direct.exists():
+        return direct
+    return base / "assets" / name
 
 
 def find_annotations(folder: Path) -> Path | None:
@@ -107,6 +124,18 @@ def line_quads(rects):
         y1 = max(r.y1 for r in group)
         quads.append(pymupdf.Quad(ul=(x0, y0), ur=(x1, y0), ll=(x0, y1), lr=(x1, y1)))
     return quads
+
+
+def make_logo(parent):
+    logo = tk.Canvas(parent, width=64, height=64, bg=BG, highlightthickness=0)
+    logo.create_oval(4, 4, 60, 60, fill=BLUE, outline="")
+    logo.create_polygon(16, 18, 31, 22, 31, 49, 16, 45, fill="#ffffff", outline="")
+    logo.create_polygon(33, 22, 48, 18, 48, 45, 33, 49, fill="#eef2ff", outline="")
+    logo.create_line(32, 22, 32, 49, fill=BLUE_DARK, width=2)
+    logo.create_rectangle(19, 31, 29, 35, fill=YELLOW, outline="")
+    logo.create_rectangle(35, 28, 45, 32, fill=YELLOW, outline="")
+    logo.create_polygon(43, 12, 51, 12, 51, 27, 47, 23, 43, 27, fill=TEAL, outline="")
+    return logo
 
 
 def locate_sequence(all_tokens, wanted):
@@ -202,7 +231,7 @@ def run_calibre(calibre: Path, book: Path, output: Path, pdf_mode: bool):
 
 class BookTab(ttk.Frame):
     def __init__(self, parent, app, mode: str):
-        super().__init__(parent, padding=20)
+        super().__init__(parent, padding=18, style="Card.TFrame")
         self.app = app
         self.mode = mode
         self.book_var = tk.StringVar()
@@ -221,16 +250,21 @@ class BookTab(ttk.Frame):
             if self.mode == "koreader"
             else "Select a Kindle book and My Clippings.txt, or convert a DRM-free Kindle file to EPUB."
         )
-        ttk.Label(self, text=title, font=("Segoe UI", 16, "bold")).pack(anchor="w")
-        ttk.Label(self, text=description, foreground="#555555", wraplength=680).pack(anchor="w", pady=(3, 16))
-        self._row("Book file", self.book_var, self._choose_book, "Choose book")
+        banner_color = "#e8ecff" if self.mode == "koreader" else "#e4faf6"
+        banner = tk.Frame(self, bg=banner_color, height=42)
+        banner.pack(fill="x", pady=(0, 12))
+        banner.pack_propagate(False)
+        tk.Label(banner, text=("  KOReader workflow" if self.mode == "koreader" else "  Kindle workflow"), bg=banner_color, fg=NAVY, font=("Segoe UI", 12, "bold"), anchor="w").pack(fill="both")
+        ttk.Label(self, text=title, style="Title.TLabel").pack(anchor="w")
+        ttk.Label(self, text=description, style="Muted.TLabel", wraplength=680).pack(anchor="w", pady=(3, 16))
+        self._row("Book file", self.book_var, self._choose_book, "Choose book", self._handle_book_drop)
         if self.mode == "koreader":
-            self._row("Highlights source", self.source_var, self._choose_sdr, "Choose .sdr")
+            self._row("Highlights source", self.source_var, self._choose_sdr, "Choose .sdr", self._handle_source_drop)
         else:
-            self._row("Highlights source", self.source_var, self._choose_clippings, "My Clippings.txt")
+            self._row("Highlights source", self.source_var, self._choose_clippings, "My Clippings.txt", self._handle_source_drop)
             out = ttk.Frame(self)
             out.pack(fill="x", pady=5)
-            ttk.Label(out, text="Output type", width=21).pack(side="left")
+            ttk.Label(out, text="Output type", width=21, style="Card.TLabel").pack(side="left")
             ttk.Combobox(
                 out,
                 textvariable=self.output_type,
@@ -245,21 +279,26 @@ class BookTab(ttk.Frame):
         self.button = ttk.Button(self, text="Create highlighted PDF" if self.mode == "koreader" else "Create output", command=self._start)
         self.button.pack(anchor="w")
         ttk.Progressbar(self, variable=self.progress_var, maximum=100).pack(fill="x", pady=(16, 8))
-        ttk.Label(self, textvariable=self.status_var, wraplength=680).pack(anchor="w")
+        ttk.Label(self, textvariable=self.status_var, style="Status.TLabel", wraplength=680).pack(anchor="w")
         if self.mode == "kindle":
             ttk.Label(
                 self,
                 text="KFX conversion is best-effort: DRM-protected KFX files or incomplete KFX companion files cannot be converted.",
-                foreground="#666666",
+                style="Muted.TLabel",
                 wraplength=680,
             ).pack(anchor="w", pady=(20, 0))
 
-    def _row(self, label, variable, command, button_text):
+    def _row(self, label, variable, command, button_text, drop_handler=None):
         row = ttk.Frame(self)
         row.pack(fill="x", pady=5)
-        ttk.Label(row, text=label, width=21).pack(side="left")
-        ttk.Entry(row, textvariable=variable).pack(side="left", fill="x", expand=True, padx=(0, 8))
-        ttk.Button(row, text=button_text, command=command).pack(side="right")
+        ttk.Label(row, text=label, width=21, style="Card.TLabel").pack(side="left")
+        entry = ttk.Entry(row, textvariable=variable)
+        entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ttk.Button(row, text=button_text, command=command, style="Accent.TButton").pack(side="right")
+        if drop_handler:
+            for widget in (row, entry):
+                widget.drop_target_register(DND_FILES)
+                widget.dnd_bind("<<Drop>>", drop_handler)
 
     def _choose_book(self):
         if self.mode == "koreader":
@@ -272,6 +311,25 @@ class BookTab(ttk.Frame):
             source = Path(path)
             suffix = ".epub" if self.mode == "kindle" and self.output_type.get() == "Converted EPUB" else ".pdf"
             self.output_var.set(str(source.with_name(source.stem + " - Highlights" + suffix)))
+
+    def _handle_book_drop(self, event):
+        for item in self.app.tk.splitlist(event.data):
+            path = Path(item)
+            if path.is_file() and path.suffix.lower() in ({".epub"} if self.mode == "koreader" else KINDLE_CONVERTIBLE_EXTENSIONS):
+                self.book_var.set(str(path))
+                suffix = ".epub" if self.mode == "kindle" and self.output_type.get() == "Converted EPUB" else ".pdf"
+                self.output_var.set(str(path.with_name(path.stem + " - Highlights" + suffix)))
+                return
+
+    def _handle_source_drop(self, event):
+        for item in self.app.tk.splitlist(event.data):
+            path = Path(item)
+            if self.mode == "koreader" and path.is_dir():
+                self.source_var.set(str(path))
+                return
+            if self.mode == "kindle" and path.is_file() and path.suffix.lower() == ".txt":
+                self.source_var.set(str(path))
+                return
 
     def _choose_sdr(self):
         path = filedialog.askdirectory(title="Select the book's .sdr folder")
@@ -369,16 +427,49 @@ class BookTab(ttk.Frame):
             self.app.events.put(("error", str(exc)))
 
 
-class App(tk.Tk):
+class App(TkinterDnD.Tk):
     def __init__(self):
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("KindleHighlights.HighlightsToPDF")
+        except Exception:
+            pass
         super().__init__()
         self.title(APP_TITLE)
-        self.geometry("780x590")
-        self.minsize(700, 520)
+        icon = resource_path("kindle_highlights_logo.ico")
+        if icon.exists():
+            try:
+                self.iconbitmap(default=str(icon))
+            except tk.TclError:
+                pass
+        self.geometry("820x650")
+        self.minsize(740, 560)
         self.events = queue.Queue()
-        outer = ttk.Frame(self, padding=12)
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except tk.TclError:
+            pass
+        style.configure("App.TFrame", background=BG)
+        style.configure("Card.TFrame", background=CARD)
+        style.configure("Card.TLabel", background=CARD, foreground="#253247")
+        style.configure("Title.TLabel", background=CARD, foreground=NAVY, font=("Segoe UI", 17, "bold"))
+        style.configure("Muted.TLabel", background=CARD, foreground="#667085")
+        style.configure("Status.TLabel", background=CARD, foreground=BLUE)
+        style.configure("Accent.TButton", padding=(11, 6), background=BLUE, foreground="white", borderwidth=0)
+        style.map("Accent.TButton", background=[("active", BLUE_DARK), ("pressed", BLUE_DARK)])
+        style.configure("TNotebook", background=BG, borderwidth=0)
+        style.configure("TNotebook.Tab", padding=(22, 10), font=("Segoe UI", 10, "bold"), background="#dfe5f2", foreground=NAVY)
+        style.map("TNotebook.Tab", background=[("selected", BLUE), ("active", "#d5dcff")], foreground=[("selected", "white"), ("!selected", NAVY)])
+        outer = ttk.Frame(self, padding=16, style="App.TFrame")
         outer.pack(fill="both", expand=True)
-        ttk.Label(outer, text=APP_TITLE, font=("Segoe UI", 18, "bold")).pack(anchor="w", padx=8, pady=(4, 10))
+        header = tk.Frame(outer, bg=BG)
+        header.pack(fill="x", padx=8, pady=(0, 12))
+        make_logo(header).pack(side="left", padx=(0, 12))
+        title_box = tk.Frame(header, bg=BG)
+        title_box.pack(side="left", fill="x", expand=True)
+        tk.Label(title_box, text=APP_TITLE, bg=BG, fg=NAVY, font=("Segoe UI", 21, "bold"), anchor="w").pack(anchor="w")
+        tk.Label(title_box, text="Bring your Kindle highlights back into a readable book.", bg=BG, fg="#667085", font=("Segoe UI", 10), anchor="w").pack(anchor="w", pady=(3, 0))
         self.tabs = ttk.Notebook(outer)
         self.tabs.pack(fill="both", expand=True)
         self.tabs.add(BookTab(self.tabs, self, "koreader"), text="KOReader")

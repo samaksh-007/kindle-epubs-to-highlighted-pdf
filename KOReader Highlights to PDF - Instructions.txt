@@ -1,11 +1,15 @@
 Highlights to PDF / EPUB
 
 1. Install Calibre if it is not already installed. The app uses Calibre's ebook-convert.exe to turn EPUB books into PDFs.
-2. Double-click KOReader-Highlights-to-PDF-Tabs-v2.exe.
+2. Double-click KOReader-Highlights-to-PDF-Logo2.exe.
 3. Use the **KOReader** tab for an EPUB plus its matching `.sdr` folder.
 4. Use the **Kindle files** tab for a DRM-free `.azw3`, `.mobi`, `.azw`, `.prc`, `.kfx`, or EPUB file.
 5. On the Kindle tab, choose `documents\\My Clippings.txt` for a highlighted PDF, or choose **Converted EPUB** if you only want a converted EPUB.
 6. Choose where to save the result and click **Create output**.
+
+You can also drag and drop the book file and highlight source directly onto their fields in the app.
+
+The app includes a colored book-and-highlighter logo in the header, window title bar, and taskbar icon, plus separate colored workflow tabs.
 
 The app finds the KOReader annotation file automatically, or reads native Kindle highlights from My Clippings.txt, and places yellow PDF highlights over the matching passages. It also supports highlights that continue across PDF pages.
 
